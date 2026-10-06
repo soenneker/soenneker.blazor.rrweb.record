@@ -1,0 +1,90 @@
+@page "/"
+@using System
+@using System.Text.Json
+@using System.Threading.Tasks
+@using Microsoft.JSInterop
+@using Soenneker.Blazor.Rrweb.Record.Abstract
+@implements IAsyncDisposable
+@inject IRrwebRecordInterop Recorder
+
+<PageTitle>rrweb recording</PageTitle>
+<h1>Record a browser session</h1>
+<p>Start recording, interact below, then stop. Copy the JSON into the replay demo.</p>
+<div class="rr-block">
+    <button @onclick="Start" disabled="@_recording">Start recording</button>
+    <button @onclick="Stop" disabled="@(!_recording)">Stop and export</button>
+    <button @onclick="Snapshot" disabled="@(!_recording)">Take snapshot</button>
+    <p role="status">@_status</p>
+</div>
+<section style="margin:2rem 0;padding:1rem;border:1px solid #999;">
+    <h2>Sample interaction</h2>
+    <label>Name (masked in recording): <input aria-label="Name" @bind="_name" /></label>
+    <button @onclick="Increment">Clicked @_clicks times</button>
+    <p class="rr-mask">This text is masked in recordings.</p>
+    <div class="rr-block">This entire element is excluded from recordings.</div>
+</section>
+<div class="rr-block">
+    <label for="recording-json">Recording JSON (@_eventCount events)</label>
+    <textarea id="recording-json" readonly value="@_json" style="display:block;width:100%;height:18rem;"></textarea>
+</div>
+
+@code {
+    private bool _recording;
+    private bool _initialized;
+    private int _clicks;
+    private int _eventCount;
+    private string _name = "";
+    private string _json = "";
+    private string _status = "Ready to record using bundled local assets.";
+
+    private async Task Start()
+    {
+        try
+        {
+            await Recorder.Start(useCdn: false);
+            _initialized = true;
+            _recording = true;
+            _json = "";
+            _eventCount = 0;
+            _status = "Recording. Input values are masked.";
+        }
+        catch (Exception ex) { _status = ex.Message; }
+    }
+
+    private async Task Stop()
+    {
+        try
+        {
+            await Recorder.Stop();
+            _recording = false;
+            JsonElement[] events = await Recorder.GetEvents(clear: true);
+            _eventCount = events.Length;
+            _json = "[" + string.Join(",", Array.ConvertAll(events, e => e.GetRawText())) + "]";
+            _status = $"Stopped. Exported {_eventCount} events.";
+        }
+        catch (Exception ex) { _status = ex.Message; }
+    }
+
+    private async Task Snapshot()
+    {
+        try { await Recorder.TakeFullSnapshot(); }
+        catch (Exception ex) { _status = ex.Message; }
+    }
+
+    private async Task Increment()
+    {
+        _clicks++;
+        if (!_recording) return;
+        using JsonDocument payload = JsonDocument.Parse($"{{\"clicks\":{_clicks}}}");
+        try { await Recorder.AddCustomEvent("demo-click", payload.RootElement); }
+        catch (Exception ex) { _status = ex.Message; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_initialized) return;
+        try { await Recorder.Stop(); }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+}
