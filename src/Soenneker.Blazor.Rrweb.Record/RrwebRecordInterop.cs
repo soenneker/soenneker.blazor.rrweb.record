@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.JSInterop;
 using Soenneker.Asyncs.Initializers;
+using Soenneker.Atomics.ValueBools;
 using Soenneker.Blazor.Utils.ModuleImport.Abstract;
 using Soenneker.Blazor.Utils.ResourceLoader.Abstract;
 using Soenneker.Blazor.Rrweb.Record.Abstract;
@@ -17,9 +18,8 @@ public sealed class RrwebRecordInterop : IRrwebRecordInterop
     private readonly IResourceLoader _resourceLoader;
     private readonly IModuleImportUtil _moduleImportUtil;
     private readonly AsyncInitializer<bool> _initializer;
-    private readonly SemaphoreSlim _gate = new(1, 1);
     private IJSObjectReference? _interop;
-    private bool _disposed;
+    private ValueAtomicBool _disposed;
 
     public RrwebRecordInterop(IResourceLoader resourceLoader, IModuleImportUtil moduleImportUtil)
     {
@@ -38,15 +38,10 @@ public sealed class RrwebRecordInterop : IRrwebRecordInterop
         _interop = await module.InvokeAsync<IJSObjectReference>("createInterop", cancellationToken);
     }
 
-    public async ValueTask Initialize(bool useCdn = true, CancellationToken cancellationToken = default)
+    public ValueTask Initialize(bool useCdn = true, CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            await _initializer.Init(useCdn, cancellationToken);
-        }
-        finally { _gate.Release(); }
+        ObjectDisposedException.ThrowIf(_disposed.Value, this);
+        return _initializer.Init(useCdn, cancellationToken);
     }
 
     public async ValueTask Start(RrwebRecordOptions? options = null, bool useCdn = true, CancellationToken cancellationToken = default)
@@ -77,52 +72,36 @@ public sealed class RrwebRecordInterop : IRrwebRecordInterop
     public ValueTask TakeFullSnapshot(bool isCheckout = false, CancellationToken cancellationToken = default)
         => InvokeVoid("takeFullSnapshot", cancellationToken, isCheckout);
 
-    private async ValueTask InvokeVoid(string method, CancellationToken cancellationToken, params object?[] args)
+    private ValueTask InvokeVoid(string method, CancellationToken cancellationToken, params object?[] args)
     {
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_interop is null)
-                throw new InvalidOperationException("Initialize must be called before this operation.");
-            await _interop.InvokeVoidAsync(method, cancellationToken, args);
-        }
-        finally { _gate.Release(); }
+        ObjectDisposedException.ThrowIf(_disposed.Value, this);
+        if (_interop is null)
+            throw new InvalidOperationException("Initialize must be called before this operation.");
+        return _interop.InvokeVoidAsync(method, cancellationToken, args);
     }
 
-    private async ValueTask<T> Invoke<T>(string method, CancellationToken cancellationToken, params object?[] args)
+    private ValueTask<T> Invoke<T>(string method, CancellationToken cancellationToken, params object?[] args)
     {
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_interop is null)
-                throw new InvalidOperationException("Initialize must be called before this operation.");
-            return await _interop.InvokeAsync<T>(method, cancellationToken, args);
-        }
-        finally { _gate.Release(); }
+        ObjectDisposedException.ThrowIf(_disposed.Value, this);
+        if (_interop is null)
+            throw new InvalidOperationException("Initialize must be called before this operation.");
+        return _interop.InvokeAsync<T>(method, cancellationToken, args);
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _gate.WaitAsync();
+        if (!_disposed.CompareAndSet(false, true))
+            return;
+        await _initializer.DisposeAsync();
         try
         {
-            if (_disposed) return;
-            _disposed = true;
-            try
+            if (_interop is not null)
             {
-                if (_interop is not null)
-                {
-                    try { await _interop.InvokeVoidAsync("dispose"); }
-                    finally { await _interop.DisposeAsync(); }
-                }
+                try { await _interop.InvokeVoidAsync("dispose"); }
+                finally { await _interop.DisposeAsync(); }
             }
-            catch (JSDisconnectedException) { }
-            finally { await _initializer.DisposeAsync(); }
-            // The module import service owns its shared cached module reference.
         }
-        finally { _gate.Release(); }
+        catch (JSDisconnectedException) { }
+        // The module import service owns its shared cached module reference.
     }
 }
-
