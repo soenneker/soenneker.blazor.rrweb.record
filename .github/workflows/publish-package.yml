@@ -38,7 +38,7 @@ jobs:
         uses: soenneker/release-notes-from-commits@v2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
 
