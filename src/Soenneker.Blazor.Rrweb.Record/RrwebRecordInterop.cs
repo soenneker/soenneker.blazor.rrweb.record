@@ -14,7 +14,7 @@ namespace Soenneker.Blazor.Rrweb.Record;
 
 public sealed class RrwebRecordInterop : IRrwebRecordInterop
 {
-    private const string _modulePath = "./_content/Soenneker.Blazor.Rrweb.Record/js/rrwebrecordinterop.js";
+    private const string _modulePath = "./_content/Soenneker.Blazor.Rrweb.Record/js/rrwebrecordinterop.min.js";
     private readonly IResourceLoader _resourceLoader;
     private readonly IModuleImportUtil _moduleImportUtil;
     private readonly AsyncInitializer<bool> _initializer;
