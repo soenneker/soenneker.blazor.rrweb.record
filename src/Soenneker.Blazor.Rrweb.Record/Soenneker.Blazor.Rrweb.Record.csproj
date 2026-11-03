@@ -50,6 +50,6 @@
         <PackageReference Include="Soenneker.Blazor.Utils.ResourceLoader" Version="11.0.1819" />
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="Soenneker.Gen.Web.Minifier" Version="11.0.54" PrivateAssets="all" />
+        <PackageReference Include="Soenneker.Gen.Web.Minifier" Version="11.0.55" PrivateAssets="all" />
     </ItemGroup>
 </Project>
